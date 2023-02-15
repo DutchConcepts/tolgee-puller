@@ -1,0 +1,19 @@
+node_modules
+
+.DS_Store
+
+# Local files
+*.local
+.env
+messages.ts
+
+# Cache files
+.eslintcache
+
+# Editor directories and files
+.vscode
+!.vscode/extensions.json
+.idea
+
+# Logs
+*.log

@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "strict": true,
+    "baseUrl": ".",
+    "declaration": true,
+    "importsNotUsedAsValues": "remove",
+    "noImplicitAny": true,
+    "outDir": "./bin",
+    "resolveJsonModule": true
+  },
+  "include": ["src"]
+}

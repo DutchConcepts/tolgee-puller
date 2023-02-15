@@ -1,0 +1,167 @@
+#!/usr/bin/env node
+'use strict';
+
+const yargs = require('yargs/yargs');
+const helpers = require('yargs/helpers');
+const process$1 = require('process');
+const path = require('path');
+const envalid = require('envalid');
+require('dotenv/config');
+const pc = require('picocolors');
+const fs = require('fs');
+const decompress = require('decompress');
+const fetch = require('node-fetch');
+
+const env = envalid.cleanEnv(process.env, {
+  MODE: envalid.str({
+    default: "development",
+    choices: ["development", "staging", "production"]
+  }),
+  TOLGEE_API_KEY: envalid.str({ default: "" }),
+  TOLGEE_API_URL: envalid.url({ default: "" }),
+  TOLGEE_NAMESPACES: envalid.json({ default: [] }),
+  TOLGEE_DEFAULT_NAMESPACE: envalid.str({ default: "" })
+});
+
+function logSuccess(message, ...args) {
+  console.log(pc.green(pc.bold(`[tolgee-puller] `)), message, pc.green("\u2714"));
+  args.forEach((arg) => console.error(arg));
+}
+function logError(message, ...args) {
+  console.error(pc.red(pc.bold(`[tolgee-puller] `)), message, pc.red("\u26A0"));
+  args.forEach((arg) => console.error(arg));
+}
+
+function parseMultiValueFilter(filter, values) {
+  return `${filter}=${values.join(`&${filter}=`)}`;
+}
+function isObjectWithProp(value, key) {
+  return typeof value === "object" && value !== null && key in value;
+}
+async function tolgeeApi(path, options) {
+  const response = await fetch(`${options.apiUrl}/v2${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": options.apiKey
+    }
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response;
+}
+async function fetchTranslationsZip(options) {
+  const { namespaces } = options;
+  const queryParams = parseMultiValueFilter("filterNamespace", namespaces);
+  const response = await tolgeeApi(`/projects/export?${queryParams}`, options);
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(new Uint8Array(arrayBuffer));
+  return buffer;
+}
+async function fetchLanguages(options) {
+  const result = await tolgeeApi("/projects/languages", options);
+  const data = await result.json();
+  if (isObjectWithProp(data, "_embedded") && isObjectWithProp(data._embedded, "languages")) {
+    const languages = data?._embedded?.languages;
+    if (Array.isArray(languages)) {
+      return languages.map((language) => language.tag);
+    }
+  }
+  throw new Error(`Failed retrieving languages. ${JSON.stringify(data)}`);
+}
+async function generateTolgeeTranslations(options) {
+  const locales = await fetchLanguages(options);
+  const zip = await fetchTranslationsZip(options);
+  const files = await decompress(zip);
+  const messages = mergeTranslations(options.defaultNamespace, locales, files);
+  writeMessagesFile(messages, options.outputPath);
+}
+function mergeTranslations(defaultNamespace, locales, files) {
+  const messages = locales.reduce((preVal, value) => {
+    return { ...preVal, [value]: {} };
+  }, {});
+  files.forEach(({ path, data }) => {
+    const [namespace, filename] = path.split("/");
+    const [language] = filename.split(".");
+    const newMessages = JSON.parse(data.toString());
+    if (namespace === defaultNamespace) {
+      messages[language] = { ...messages[language], ...newMessages };
+    } else {
+      messages[language][namespace] = newMessages;
+    }
+  });
+  return messages;
+}
+function writeMessagesFile(messages, outputPath) {
+  const stringifiedMessages = JSON.stringify(messages);
+  const codeStr = `// THIS FILE IS GENERATED, DO NOT EDIT!
+const messages = ${stringifiedMessages};
+type Messages = typeof messages;
+export { messages, type Messages };`;
+  fs.writeFileSync(`${outputPath}/messages.ts`, codeStr);
+}
+
+const command = {
+  command: "generate",
+  describe: "Generate locale messages",
+  aliases: "gen",
+  builder: {
+    apiKey: {
+      default: null,
+      description: "The Personal Access Token or a Project API Key."
+    },
+    apiUrl: {
+      default: null,
+      description: "The API url of your Tolgee (selfhosted) server.",
+      defaultDescription: "Tolgee API"
+    },
+    namespaces: {
+      default: null,
+      description: "The namespaces that need to be fetched."
+    },
+    defaultNamespace: {
+      default: null,
+      description: "The default namespace of the project."
+    }
+  },
+  handler: async (argv) => {
+    const options = {
+      apiKey: argv.apiKey || env.TOLGEE_API_KEY,
+      apiUrl: argv.apiUrl || env.TOLGEE_API_URL || "https://app.tolgee.io",
+      namespaces: argv.namespaces || env.TOLGEE_NAMESPACES,
+      defaultNamespace: argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE
+    };
+    if (!options.apiKey) {
+      return logError("No API key specified.");
+    }
+    if (!options.namespaces.length) {
+      return logError("No namespaces specified.");
+    }
+    if (!options.defaultNamespace) {
+      if (options.namespaces.length === 1) {
+        options.defaultNamespace = options.namespaces[0];
+      } else {
+        return logError("No default namespace specified.");
+      }
+    }
+    const outputPath = path.resolve(process$1.cwd(), "node_modules/tolgee-puller");
+    try {
+      await generateTolgeeTranslations({ ...options, outputPath });
+      logSuccess("Pulled translation files from Tolgee!");
+    } catch (e) {
+      logError("Failed pulling translation files from Tolgee.", e);
+    }
+  }
+};
+const generateCommand = command;
+
+function addCommands(argv) {
+  const commands = [generateCommand];
+  commands.forEach((command) => argv.command(command));
+}
+
+const instance = yargs(helpers.hideBin(process.argv));
+instance.wrap(instance.terminalWidth());
+addCommands(instance);
+instance.help();
+instance.parse();
