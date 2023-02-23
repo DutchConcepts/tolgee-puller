@@ -42,10 +42,11 @@ const command: CommandModule<unknown, Options> = {
   },
   handler: async (argv) => {
     const options = {
-      apiKey: argv.apiKey || env.TOLGEE_API_KEY,
+      apiKey: argv.apiKey || env.TOLGEE_API_KEY || null,
       apiUrl: argv.apiUrl || env.TOLGEE_API_URL || 'https://app.tolgee.io',
-      namespaces: argv.namespaces || env.TOLGEE_NAMESPACES,
-      defaultNamespace: argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE,
+      namespaces: argv.namespaces || env.TOLGEE_NAMESPACES || [],
+      defaultNamespace:
+        argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null,
     };
 
     if (!options.apiKey) {
@@ -56,20 +57,32 @@ const command: CommandModule<unknown, Options> = {
       return logError('No namespaces specified.');
     }
 
-    if (!options.defaultNamespace) {
-      // If we only have one namespace specified we want to use that one
-      // as a default, otherwise we need to have it defined accordingly.
-      if (options.namespaces.length === 1) {
-        options.defaultNamespace = options.namespaces[0];
-      } else {
-        return logError('No default namespace specified.');
-      }
+    if (
+      options.defaultNamespace &&
+      !options.namespaces.includes(options.defaultNamespace)
+    ) {
+      return logError(
+        'The option `defaultNamespace` should be one of the specified namespaces.'
+      );
+    }
+
+    // If we only have one namespace specified we want to use that one
+    // as a default, otherwise we need to have it defined accordingly.
+    if (options.namespaces.length === 1) {
+      options.defaultNamespace = options.namespaces[0];
     }
 
     const outputPath = resolve(cwd(), 'node_modules/tolgee-puller');
 
     try {
-      await generateTolgeeTranslations({ ...options, outputPath });
+      await generateTolgeeTranslations({
+        apiKey: options.apiKey,
+        apiUrl: options.apiUrl,
+        namespaces: options.namespaces,
+        defaultNamespace: options.defaultNamespace,
+        outputPath,
+      });
+
       logSuccess('Pulled translation files from Tolgee!');
     } catch (e) {
       logError('Failed pulling translation files from Tolgee.', e);

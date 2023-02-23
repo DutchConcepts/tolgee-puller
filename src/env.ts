@@ -1,5 +1,9 @@
 import { cleanEnv, json, str, url } from 'envalid';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { expand } from 'dotenv-expand';
+
+// Enable usages of variables inside `.env` files with `dotenv-expand`.
+expand(dotenv.config());
 
 export const env = cleanEnv(process.env, {
   MODE: str({

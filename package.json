@@ -43,6 +43,7 @@
   "dependencies": {
     "decompress": "^4.2.1",
     "dotenv": "^16.0.3",
+    "dotenv-expand": "^10.0.0",
     "envalid": "^7.3.1",
     "node-fetch": "^2.6.9",
     "picocolors": "^1.0.0",

@@ -6,7 +6,7 @@ import fetch from 'node-fetch';
 interface Options {
   apiKey: string;
   apiUrl: string;
-  defaultNamespace: string;
+  defaultNamespace: string | null;
   namespaces: string[];
   outputPath: string;
 }
@@ -103,7 +103,7 @@ export async function generateTolgeeTranslations(options: Options) {
   // Extract the zip so we can use the files.
   const files = await decompress(zip);
 
-  const messages = mergeTranslations(options.defaultNamespace, locales, files);
+  const messages = mergeTranslations(locales, files, options.defaultNamespace);
 
   writeMessagesFile(messages, options.outputPath);
 }
@@ -112,20 +112,23 @@ export async function generateTolgeeTranslations(options: Options) {
  * Returns an object with all translations merged.
  */
 export function mergeTranslations(
-  defaultNamespace: string,
   locales: string[],
-  files: decompress.File[]
+  files: decompress.File[],
+  defaultNamespace: string | null
 ) {
   const messages: Locales = locales.reduce((preVal, value) => {
     return { ...preVal, [value]: {} };
   }, {});
+
+  const isValidDefaultNamespace =
+    !!defaultNamespace && defaultNamespace.length > 0;
 
   files.forEach(({ path, data }) => {
     const [namespace, filename] = path.split('/');
     const [language] = filename.split('.');
     const newMessages = JSON.parse(data.toString());
 
-    if (namespace === defaultNamespace) {
+    if (isValidDefaultNamespace && defaultNamespace === namespace) {
       messages[language] = { ...messages[language], ...newMessages };
     } else {
       messages[language][namespace] = newMessages;

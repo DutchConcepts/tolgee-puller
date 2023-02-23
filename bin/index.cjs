@@ -6,12 +6,14 @@ const helpers = require('yargs/helpers');
 const process$1 = require('process');
 const path = require('path');
 const envalid = require('envalid');
-require('dotenv/config');
+const dotenv = require('dotenv');
+const dotenvExpand = require('dotenv-expand');
 const pc = require('picocolors');
 const fs = require('fs');
 const decompress = require('decompress');
 const fetch = require('node-fetch');
 
+dotenvExpand.expand(dotenv.config());
 const env = envalid.cleanEnv(process.env, {
   MODE: envalid.str({
     default: "development",
@@ -73,18 +75,19 @@ async function generateTolgeeTranslations(options) {
   const locales = await fetchLanguages(options);
   const zip = await fetchTranslationsZip(options);
   const files = await decompress(zip);
-  const messages = mergeTranslations(options.defaultNamespace, locales, files);
+  const messages = mergeTranslations(locales, files, options.defaultNamespace);
   writeMessagesFile(messages, options.outputPath);
 }
-function mergeTranslations(defaultNamespace, locales, files) {
+function mergeTranslations(locales, files, defaultNamespace) {
   const messages = locales.reduce((preVal, value) => {
     return { ...preVal, [value]: {} };
   }, {});
+  const isValidDefaultNamespace = !!defaultNamespace && defaultNamespace.length > 0;
   files.forEach(({ path, data }) => {
     const [namespace, filename] = path.split("/");
     const [language] = filename.split(".");
     const newMessages = JSON.parse(data.toString());
-    if (namespace === defaultNamespace) {
+    if (isValidDefaultNamespace && defaultNamespace === namespace) {
       messages[language] = { ...messages[language], ...newMessages };
     } else {
       messages[language][namespace] = newMessages;
@@ -126,10 +129,10 @@ const command = {
   },
   handler: async (argv) => {
     const options = {
-      apiKey: argv.apiKey || env.TOLGEE_API_KEY,
+      apiKey: argv.apiKey || env.TOLGEE_API_KEY || null,
       apiUrl: argv.apiUrl || env.TOLGEE_API_URL || "https://app.tolgee.io",
-      namespaces: argv.namespaces || env.TOLGEE_NAMESPACES,
-      defaultNamespace: argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE
+      namespaces: argv.namespaces || env.TOLGEE_NAMESPACES || [],
+      defaultNamespace: argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null
     };
     if (!options.apiKey) {
       return logError("No API key specified.");
@@ -137,16 +140,23 @@ const command = {
     if (!options.namespaces.length) {
       return logError("No namespaces specified.");
     }
-    if (!options.defaultNamespace) {
-      if (options.namespaces.length === 1) {
-        options.defaultNamespace = options.namespaces[0];
-      } else {
-        return logError("No default namespace specified.");
-      }
+    if (options.defaultNamespace && !options.namespaces.includes(options.defaultNamespace)) {
+      return logError(
+        "The option `defaultNamespace` should be one of the specified namespaces."
+      );
+    }
+    if (options.namespaces.length === 1) {
+      options.defaultNamespace = options.namespaces[0];
     }
     const outputPath = path.resolve(process$1.cwd(), "node_modules/tolgee-puller");
     try {
-      await generateTolgeeTranslations({ ...options, outputPath });
+      await generateTolgeeTranslations({
+        apiKey: options.apiKey,
+        apiUrl: options.apiUrl,
+        namespaces: options.namespaces,
+        defaultNamespace: options.defaultNamespace,
+        outputPath
+      });
       logSuccess("Pulled translation files from Tolgee!");
     } catch (e) {
       logError("Failed pulling translation files from Tolgee.", e);
