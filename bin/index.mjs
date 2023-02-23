@@ -4,12 +4,14 @@ import { hideBin } from 'yargs/helpers';
 import { cwd } from 'process';
 import { resolve } from 'path';
 import { cleanEnv, str, url, json } from 'envalid';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { expand } from 'dotenv-expand';
 import pc from 'picocolors';
 import { writeFileSync } from 'fs';
 import decompress from 'decompress';
 import fetch from 'node-fetch';
 
+expand(dotenv.config());
 const env = cleanEnv(process.env, {
   MODE: str({
     default: "development",

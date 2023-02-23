@@ -6,12 +6,14 @@ const helpers = require('yargs/helpers');
 const process$1 = require('process');
 const path = require('path');
 const envalid = require('envalid');
-require('dotenv/config');
+const dotenv = require('dotenv');
+const dotenvExpand = require('dotenv-expand');
 const pc = require('picocolors');
 const fs = require('fs');
 const decompress = require('decompress');
 const fetch = require('node-fetch');
 
+dotenvExpand.expand(dotenv.config());
 const env = envalid.cleanEnv(process.env, {
   MODE: envalid.str({
     default: "development",
