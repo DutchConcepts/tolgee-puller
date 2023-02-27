@@ -12,6 +12,7 @@ const pc = require('picocolors');
 const fs = require('fs');
 const decompress = require('decompress');
 const fetch = require('node-fetch');
+const tsIsPresent = require('ts-is-present');
 
 dotenvExpand.expand(dotenv.config());
 const env = envalid.cleanEnv(process.env, {
@@ -21,6 +22,7 @@ const env = envalid.cleanEnv(process.env, {
   }),
   TOLGEE_API_KEY: envalid.str({ default: "" }),
   TOLGEE_API_URL: envalid.url({ default: "" }),
+  TOLGEE_LANGUAGES: envalid.json({ default: [] }),
   TOLGEE_NAMESPACES: envalid.json({ default: [] }),
   TOLGEE_DEFAULT_NAMESPACE: envalid.str({ default: "" })
 });
@@ -36,6 +38,26 @@ function logError(message, ...args) {
 
 function parseMultiValueFilter(filter, values) {
   return `${filter}=${values.join(`&${filter}=`)}`;
+}
+function parseLanguages(languages) {
+  if (!languages.length) {
+    return null;
+  }
+  return `languages=${languages.join(",")}`;
+}
+function parseQueryParams(languages, namespaces) {
+  const values = [
+    parseLanguages(languages),
+    parseMultiValueFilter("filterNamespace", namespaces)
+  ].filter(tsIsPresent.isPresent);
+  let queryStr = "?";
+  values.forEach((value, index) => {
+    if (index > 0) {
+      queryStr += "&";
+    }
+    queryStr += `${value}`;
+  });
+  return queryStr;
 }
 function isObjectWithProp(value, key) {
   return typeof value === "object" && value !== null && key in value;
@@ -53,33 +75,43 @@ async function tolgeeApi(path, options) {
   return response;
 }
 async function fetchTranslationsZip(options) {
-  const { namespaces } = options;
-  const queryParams = parseMultiValueFilter("filterNamespace", namespaces);
-  const response = await tolgeeApi(`/projects/export?${queryParams}`, options);
+  const { languages, namespaces } = options;
+  const queryParams = parseQueryParams(languages, namespaces);
+  const response = await tolgeeApi(`/projects/export${queryParams}`, options);
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(new Uint8Array(arrayBuffer));
   return buffer;
 }
-async function fetchLanguages(options) {
+async function validateLanguages(languages, options) {
   const result = await tolgeeApi("/projects/languages", options);
   const data = await result.json();
   if (isObjectWithProp(data, "_embedded") && isObjectWithProp(data._embedded, "languages")) {
-    const languages = data?._embedded?.languages;
-    if (Array.isArray(languages)) {
-      return languages.map((language) => language.tag);
+    const tolgeeLanguages = data?._embedded?.languages;
+    if (Array.isArray(tolgeeLanguages)) {
+      const tolgeeLanguageTags = tolgeeLanguages.map(({ tag }) => tag);
+      const valid = languages.every((language) => {
+        return tolgeeLanguageTags.includes(language);
+      });
+      if (valid) {
+        return;
+      }
+      throw new Error(
+        `Failed trying to fetch non-existing language. ${JSON.stringify(data)}`
+      );
     }
   }
   throw new Error(`Failed retrieving languages. ${JSON.stringify(data)}`);
 }
 async function generateTolgeeTranslations(options) {
-  const locales = await fetchLanguages(options);
+  const { languages, defaultNamespace, apiKey, apiUrl } = options;
+  await validateLanguages(languages, { apiKey, apiUrl });
   const zip = await fetchTranslationsZip(options);
   const files = await decompress(zip);
-  const messages = mergeTranslations(locales, files, options.defaultNamespace);
+  const messages = mergeTranslations(languages, files, defaultNamespace);
   writeMessagesFile(messages, options.outputPath);
 }
-function mergeTranslations(locales, files, defaultNamespace) {
-  const messages = locales.reduce((preVal, value) => {
+function mergeTranslations(languages, files, defaultNamespace) {
+  const messages = languages.reduce((preVal, value) => {
     return { ...preVal, [value]: {} };
   }, {});
   const isValidDefaultNamespace = !!defaultNamespace && defaultNamespace.length > 0;
@@ -118,6 +150,10 @@ const command = {
       description: "The API url of your Tolgee (selfhosted) server.",
       defaultDescription: "Tolgee API"
     },
+    languages: {
+      default: null,
+      description: "The language(s) that need to be fetched."
+    },
     namespaces: {
       default: null,
       description: "The namespaces that need to be fetched."
@@ -131,6 +167,7 @@ const command = {
     const options = {
       apiKey: argv.apiKey || env.TOLGEE_API_KEY || null,
       apiUrl: argv.apiUrl || env.TOLGEE_API_URL || "https://app.tolgee.io",
+      languages: argv.languages || env.TOLGEE_LANGUAGES || null,
       namespaces: argv.namespaces || env.TOLGEE_NAMESPACES || [],
       defaultNamespace: argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null
     };
@@ -153,6 +190,7 @@ const command = {
       await generateTolgeeTranslations({
         apiKey: options.apiKey,
         apiUrl: options.apiUrl,
+        languages: options.languages,
         namespaces: options.namespaces,
         defaultNamespace: options.defaultNamespace,
         outputPath
