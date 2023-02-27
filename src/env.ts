@@ -12,6 +12,7 @@ export const env = cleanEnv(process.env, {
   }),
   TOLGEE_API_KEY: str({ default: '' }),
   TOLGEE_API_URL: url({ default: '' }),
+  TOLGEE_LANGUAGES: json<string[]>({ default: [] }),
   TOLGEE_NAMESPACES: json<string[]>({ default: [] }),
   TOLGEE_DEFAULT_NAMESPACE: str({ default: '' }),
 });

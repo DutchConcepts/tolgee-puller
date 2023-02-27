@@ -1,6 +1,6 @@
 {
   "name": "tolgee-puller",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.2",
   "sideEffects": false,
   "type": "module",
   "main": "./bin/index.mjs",
@@ -47,6 +47,7 @@
     "envalid": "^7.3.1",
     "node-fetch": "^2.6.9",
     "picocolors": "^1.0.0",
+    "ts-is-present": "^1.2.2",
     "yargs": "^17.6.2"
   },
   "lint-staged": {

@@ -13,8 +13,9 @@ import { generateTolgeeTranslations } from '../helpers/tolgee';
 type Options = Arguments<{
   apiKey: string | null;
   apiUrl: string | null;
-  defaultNamespace: string | null;
+  languages: string[] | null;
   namespaces: string[] | null;
+  defaultNamespace: string | null;
 }>;
 
 const command: CommandModule<unknown, Options> = {
@@ -31,6 +32,10 @@ const command: CommandModule<unknown, Options> = {
       description: 'The API url of your Tolgee (selfhosted) server.',
       defaultDescription: 'Tolgee API',
     },
+    languages: {
+      default: null,
+      description: 'The language(s) that need to be fetched.',
+    },
     namespaces: {
       default: null,
       description: 'The namespaces that need to be fetched.',
@@ -44,6 +49,7 @@ const command: CommandModule<unknown, Options> = {
     const options = {
       apiKey: argv.apiKey || env.TOLGEE_API_KEY || null,
       apiUrl: argv.apiUrl || env.TOLGEE_API_URL || 'https://app.tolgee.io',
+      languages: argv.languages || env.TOLGEE_LANGUAGES || null,
       namespaces: argv.namespaces || env.TOLGEE_NAMESPACES || [],
       defaultNamespace:
         argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null,
@@ -78,6 +84,7 @@ const command: CommandModule<unknown, Options> = {
       await generateTolgeeTranslations({
         apiKey: options.apiKey,
         apiUrl: options.apiUrl,
+        languages: options.languages,
         namespaces: options.namespaces,
         defaultNamespace: options.defaultNamespace,
         outputPath,

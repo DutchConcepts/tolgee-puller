@@ -2,14 +2,18 @@
 import { writeFileSync } from 'fs';
 import decompress from 'decompress';
 import fetch from 'node-fetch';
+import { isPresent } from 'ts-is-present';
 
 interface Options {
   apiKey: string;
   apiUrl: string;
-  defaultNamespace: string | null;
+  languages: string[];
   namespaces: string[];
+  defaultNamespace: string | null;
   outputPath: string;
 }
+
+type ApiOptions = Pick<Options, 'apiKey' | 'apiUrl'>;
 
 interface Message {
   [key: string]: string | Message;
@@ -28,6 +32,33 @@ function parseMultiValueFilter(filter: string, values: string[]) {
   return `${filter}=${values.join(`&${filter}=`)}`;
 }
 
+function parseLanguages(languages: string[]) {
+  if (!languages.length) {
+    return null;
+  }
+
+  return `languages=${languages.join(',')}`;
+}
+
+function parseQueryParams(languages: string[], namespaces: string[]) {
+  const values = [
+    parseLanguages(languages),
+    parseMultiValueFilter('filterNamespace', namespaces),
+  ].filter(isPresent);
+
+  let queryStr = '?';
+
+  values.forEach((value, index) => {
+    if (index > 0) {
+      queryStr += '&';
+    }
+
+    queryStr += `${value}`;
+  });
+
+  return queryStr;
+}
+
 /**
  * Check if a value is an object and contains a property.
  */
@@ -38,7 +69,7 @@ function isObjectWithProp(
   return typeof value === 'object' && value !== null && key in value;
 }
 
-async function tolgeeApi(path: string, options: Options) {
+async function tolgeeApi(path: string, options: ApiOptions) {
   const response = await fetch(`${options.apiUrl}/v2${path}`, {
     headers: {
       'Content-Type': 'application/json',
@@ -57,12 +88,12 @@ async function tolgeeApi(path: string, options: Options) {
  * Get zip with locale files in namespace folder structure.
  */
 async function fetchTranslationsZip(options: Options) {
-  const { namespaces } = options;
+  const { languages, namespaces } = options;
 
   // We parse the filters to: '?filterNamespace=[value]&filterNamespace=[value]
-  const queryParams = parseMultiValueFilter('filterNamespace', namespaces);
+  const queryParams = parseQueryParams(languages, namespaces);
 
-  const response = await tolgeeApi(`/projects/export?${queryParams}`, options);
+  const response = await tolgeeApi(`/projects/export${queryParams}`, options);
 
   // We want to work with buffers so we can use the `decompress` package.
   const arrayBuffer = await response.arrayBuffer();
@@ -74,7 +105,10 @@ async function fetchTranslationsZip(options: Options) {
 /**
  * Get an array of languages.
  */
-async function fetchLanguages(options: Options): Promise<string[]> {
+async function validateLanguages(
+  languages: string[],
+  options: ApiOptions
+): Promise<void> {
   const result = await tolgeeApi('/projects/languages', options);
   const data = await result.json();
 
@@ -82,10 +116,22 @@ async function fetchLanguages(options: Options): Promise<string[]> {
     isObjectWithProp(data, '_embedded') &&
     isObjectWithProp(data._embedded, 'languages')
   ) {
-    const languages = data?._embedded?.languages;
+    const tolgeeLanguages = data?._embedded?.languages;
 
-    if (Array.isArray(languages)) {
-      return languages.map((language) => language.tag);
+    if (Array.isArray(tolgeeLanguages)) {
+      const tolgeeLanguageTags = tolgeeLanguages.map(({ tag }) => tag);
+
+      const valid = languages.every((language) => {
+        return tolgeeLanguageTags.includes(language);
+      });
+
+      if (valid) {
+        return;
+      }
+
+      throw new Error(
+        `Failed trying to fetch non-existing language. ${JSON.stringify(data)}`
+      );
     }
   }
 
@@ -96,14 +142,17 @@ async function fetchLanguages(options: Options): Promise<string[]> {
  * Generates a `messages.ts` file in the root of this repository.
  */
 export async function generateTolgeeTranslations(options: Options) {
+  const { languages, defaultNamespace, apiKey, apiUrl } = options;
+
   // Fetch all languages and the zipped translations.
-  const locales = await fetchLanguages(options);
+  await validateLanguages(languages, { apiKey, apiUrl });
+
   const zip = await fetchTranslationsZip(options);
 
   // Extract the zip so we can use the files.
   const files = await decompress(zip);
 
-  const messages = mergeTranslations(locales, files, options.defaultNamespace);
+  const messages = mergeTranslations(languages, files, defaultNamespace);
 
   writeMessagesFile(messages, options.outputPath);
 }
@@ -112,11 +161,11 @@ export async function generateTolgeeTranslations(options: Options) {
  * Returns an object with all translations merged.
  */
 export function mergeTranslations(
-  locales: string[],
+  languages: string[],
   files: decompress.File[],
   defaultNamespace: string | null
 ) {
-  const messages: Locales = locales.reduce((preVal, value) => {
+  const messages: Locales = languages.reduce((preVal, value) => {
     return { ...preVal, [value]: {} };
   }, {});
 
