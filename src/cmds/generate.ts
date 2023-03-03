@@ -75,12 +75,6 @@ const command: CommandModule<unknown, Options> = {
         );
       }
 
-      // If we only have one namespace specified we want to use that one
-      // as a default, otherwise we need to have it defined accordingly.
-      if (options.namespaces.length === 1) {
-        options.defaultNamespace = options.namespaces[0];
-      }
-
       await generateTolgeeTranslations({
         apiKey: options.apiKey,
         apiUrl: options.apiUrl,
