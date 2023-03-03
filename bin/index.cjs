@@ -171,22 +171,22 @@ const command = {
       namespaces: argv.namespaces || env.TOLGEE_NAMESPACES || [],
       defaultNamespace: argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null
     };
-    if (!options.apiKey) {
-      return logError("No API key specified.");
-    }
-    if (!options.namespaces.length) {
-      return logError("No namespaces specified.");
-    }
-    if (options.defaultNamespace && !options.namespaces.includes(options.defaultNamespace)) {
-      return logError(
-        "The option `defaultNamespace` should be one of the specified namespaces."
-      );
-    }
-    if (options.namespaces.length === 1) {
-      options.defaultNamespace = options.namespaces[0];
-    }
     const outputPath = path.resolve(process$1.cwd(), "node_modules/tolgee-puller");
     try {
+      if (!options.apiKey) {
+        throw new Error("No API key specified.");
+      }
+      if (!options.namespaces.length) {
+        throw new Error("No namespaces specified.");
+      }
+      if (options.defaultNamespace && !options.namespaces.includes(options.defaultNamespace)) {
+        throw new Error(
+          "The option `defaultNamespace` should be one of the specified namespaces."
+        );
+      }
+      if (options.namespaces.length === 1) {
+        options.defaultNamespace = options.namespaces[0];
+      }
       await generateTolgeeTranslations({
         apiKey: options.apiKey,
         apiUrl: options.apiUrl,
@@ -197,7 +197,8 @@ const command = {
       });
       logSuccess("Pulled translation files from Tolgee!");
     } catch (e) {
-      logError("Failed pulling translation files from Tolgee.", e);
+      logError("Failed pulling translation files from Tolgee.");
+      throw e;
     }
   }
 };
