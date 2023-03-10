@@ -10,12 +10,16 @@ import { env } from '../env';
 import { logError, logSuccess } from '../helpers/logger';
 import { generateTolgeeTranslations } from '../helpers/tolgee';
 
+// constants
+const DEFAULT_OUTPUT_PATH = 'node_modules/tolgee-puller/messages.ts';
+
 type Options = Arguments<{
   apiKey: string | null;
   apiUrl: string | null;
   languages: string[] | null;
   namespaces: string[] | null;
   defaultNamespace: string | null;
+  outputPath: string | null;
 }>;
 
 const command: CommandModule<unknown, Options> = {
@@ -31,6 +35,11 @@ const command: CommandModule<unknown, Options> = {
       default: null,
       description: 'The API url of your Tolgee (selfhosted) server.',
       defaultDescription: 'Tolgee API',
+    },
+    outputPath: {
+      default: null,
+      defaultDescription: DEFAULT_OUTPUT_PATH,
+      description: 'The output path (from root) for the generated file.',
     },
     languages: {
       default: null,
@@ -53,9 +62,11 @@ const command: CommandModule<unknown, Options> = {
       namespaces: argv.namespaces || env.TOLGEE_NAMESPACES || [],
       defaultNamespace:
         argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null,
+      outputPath:
+        argv.outputPath || env.TOLGEE_OUTPUT_PATH || DEFAULT_OUTPUT_PATH,
     };
 
-    const outputPath = resolve(cwd(), 'node_modules/tolgee-puller');
+    const outputPath = resolve(cwd(), options.outputPath);
 
     try {
       if (!options.apiKey) {
@@ -78,9 +89,9 @@ const command: CommandModule<unknown, Options> = {
       await generateTolgeeTranslations({
         apiKey: options.apiKey,
         apiUrl: options.apiUrl,
+        defaultNamespace: options.defaultNamespace,
         languages: options.languages,
         namespaces: options.namespaces,
-        defaultNamespace: options.defaultNamespace,
         outputPath,
       });
 
