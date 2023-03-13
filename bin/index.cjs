@@ -24,7 +24,8 @@ const env = envalid.cleanEnv(process.env, {
   TOLGEE_API_URL: envalid.url({ default: "" }),
   TOLGEE_LANGUAGES: envalid.json({ default: [] }),
   TOLGEE_NAMESPACES: envalid.json({ default: [] }),
-  TOLGEE_DEFAULT_NAMESPACE: envalid.str({ default: "" })
+  TOLGEE_DEFAULT_NAMESPACE: envalid.str({ default: "" }),
+  TOLGEE_OUTPUT_PATH: envalid.str({ default: "" })
 });
 
 function logSuccess(message, ...args) {
@@ -103,12 +104,12 @@ async function validateLanguages(languages, options) {
   throw new Error(`Failed retrieving languages. ${JSON.stringify(data)}`);
 }
 async function generateTolgeeTranslations(options) {
-  const { languages, defaultNamespace, apiKey, apiUrl } = options;
+  const { apiKey, apiUrl, defaultNamespace, languages, outputPath } = options;
   await validateLanguages(languages, { apiKey, apiUrl });
   const zip = await fetchTranslationsZip(options);
   const files = await decompress(zip);
   const messages = mergeTranslations(languages, files, defaultNamespace);
-  writeMessagesFile(messages, options.outputPath);
+  writeMessagesFile(messages, outputPath);
 }
 function mergeTranslations(languages, files, defaultNamespace) {
   const messages = languages.reduce((preVal, value) => {
@@ -130,12 +131,13 @@ function mergeTranslations(languages, files, defaultNamespace) {
 function writeMessagesFile(messages, outputPath) {
   const stringifiedMessages = JSON.stringify(messages);
   const codeStr = `// THIS FILE IS GENERATED, DO NOT EDIT!
-const messages = ${stringifiedMessages};
-type Messages = typeof messages;
-export { messages, type Messages };`;
-  fs.writeFileSync(`${outputPath}/messages.ts`, codeStr);
+const resources = ${stringifiedMessages};
+type Resources = typeof resources;
+export { resources, type Resources };`;
+  fs.writeFileSync(outputPath, codeStr);
 }
 
+const DEFAULT_OUTPUT_PATH = "node_modules/tolgee-puller/messages.ts";
 const command = {
   command: "generate",
   describe: "Generate locale messages",
@@ -149,6 +151,11 @@ const command = {
       default: null,
       description: "The API url of your Tolgee (selfhosted) server.",
       defaultDescription: "Tolgee API"
+    },
+    outputPath: {
+      default: null,
+      defaultDescription: DEFAULT_OUTPUT_PATH,
+      description: "The output path (from root) for the generated file."
     },
     languages: {
       default: null,
@@ -169,9 +176,10 @@ const command = {
       apiUrl: argv.apiUrl || env.TOLGEE_API_URL || "https://app.tolgee.io",
       languages: argv.languages || env.TOLGEE_LANGUAGES || null,
       namespaces: argv.namespaces || env.TOLGEE_NAMESPACES || [],
-      defaultNamespace: argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null
+      defaultNamespace: argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null,
+      outputPath: argv.outputPath || env.TOLGEE_OUTPUT_PATH || DEFAULT_OUTPUT_PATH
     };
-    const outputPath = path.resolve(process$1.cwd(), "node_modules/tolgee-puller");
+    const outputPath = path.resolve(process$1.cwd(), options.outputPath);
     try {
       if (!options.apiKey) {
         throw new Error("No API key specified.");
@@ -187,9 +195,9 @@ const command = {
       await generateTolgeeTranslations({
         apiKey: options.apiKey,
         apiUrl: options.apiUrl,
+        defaultNamespace: options.defaultNamespace,
         languages: options.languages,
         namespaces: options.namespaces,
-        defaultNamespace: options.defaultNamespace,
         outputPath
       });
       logSuccess("Pulled translation files from Tolgee!");

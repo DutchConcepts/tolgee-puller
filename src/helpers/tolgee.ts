@@ -142,7 +142,7 @@ async function validateLanguages(
  * Generates a `messages.ts` file in the root of this repository.
  */
 export async function generateTolgeeTranslations(options: Options) {
-  const { languages, defaultNamespace, apiKey, apiUrl } = options;
+  const { apiKey, apiUrl, defaultNamespace, languages, outputPath } = options;
 
   // Fetch all languages and the zipped translations.
   await validateLanguages(languages, { apiKey, apiUrl });
@@ -154,7 +154,7 @@ export async function generateTolgeeTranslations(options: Options) {
 
   const messages = mergeTranslations(languages, files, defaultNamespace);
 
-  writeMessagesFile(messages, options.outputPath);
+  writeMessagesFile(messages, outputPath);
 }
 
 /**
@@ -192,7 +192,7 @@ export function mergeTranslations(
  */
 function writeMessagesFile(messages: Locales, outputPath: string) {
   const stringifiedMessages = JSON.stringify(messages);
-  const codeStr = `// THIS FILE IS GENERATED, DO NOT EDIT!\nconst messages = ${stringifiedMessages};\ntype Messages = typeof messages;\nexport { messages, type Messages };`;
+  const codeStr = `// THIS FILE IS GENERATED, DO NOT EDIT!\nconst resources = ${stringifiedMessages};\ntype Resources = typeof resources;\nexport { resources, type Resources };`;
 
-  writeFileSync(`${outputPath}/messages.ts`, codeStr);
+  writeFileSync(outputPath, codeStr);
 }
