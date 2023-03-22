@@ -1,4 +1,4 @@
-import { cleanEnv, json, str, url } from 'envalid';
+import { cleanEnv, json, str, url, bool } from 'envalid';
 import dotenv from 'dotenv';
 import { expand } from 'dotenv-expand';
 
@@ -16,4 +16,5 @@ export const env = cleanEnv(process.env, {
   TOLGEE_NAMESPACES: json<string[]>({ default: [] }),
   TOLGEE_DEFAULT_NAMESPACE: str({ default: '' }),
   TOLGEE_OUTPUT_PATH: str({ default: '' }),
+  TOLGEE_SPLIT: bool({ default: false }),
 });

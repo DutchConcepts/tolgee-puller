@@ -20,6 +20,7 @@ type Options = Arguments<{
   namespaces: string[] | null;
   defaultNamespace: string | null;
   outputPath: string | null;
+  split: boolean | null;
 }>;
 
 const command: CommandModule<unknown, Options> = {
@@ -53,6 +54,11 @@ const command: CommandModule<unknown, Options> = {
       default: null,
       description: 'The default namespace of the project.',
     },
+    split: {
+      default: false,
+      boolean: true,
+      description: 'The default namespace of the project.',
+    },
   },
   handler: async (argv) => {
     const options = {
@@ -64,7 +70,10 @@ const command: CommandModule<unknown, Options> = {
         argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null,
       outputPath:
         argv.outputPath || env.TOLGEE_OUTPUT_PATH || DEFAULT_OUTPUT_PATH,
+      split: argv.split || env.TOLGEE_SPLIT,
     };
+
+    console.log(argv.split, env.TOLGEE_SPLIT);
 
     const outputPath = resolve(cwd(), options.outputPath);
 
@@ -93,6 +102,7 @@ const command: CommandModule<unknown, Options> = {
         languages: options.languages,
         namespaces: options.namespaces,
         outputPath,
+        split: options.split,
       });
 
       logSuccess('Pulled translation files from Tolgee!');

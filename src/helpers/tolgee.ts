@@ -2,6 +2,7 @@
 import { writeFileSync } from 'fs';
 import decompress from 'decompress';
 import fetch from 'node-fetch';
+import path from 'path';
 import { isPresent } from 'ts-is-present';
 
 interface Options {
@@ -11,6 +12,7 @@ interface Options {
   namespaces: string[];
   defaultNamespace: string | null;
   outputPath: string;
+  split: boolean;
 }
 
 type ApiOptions = Pick<Options, 'apiKey' | 'apiUrl'>;
@@ -21,7 +23,9 @@ interface Message {
 
 interface Locales {
   [language: string]: {
-    [component: string]: Message;
+    [namespace: string]: {
+      [key: string]: Message;
+    };
   };
 }
 
@@ -142,7 +146,8 @@ async function validateLanguages(
  * Generates a `messages.ts` file in the root of this repository.
  */
 export async function generateTolgeeTranslations(options: Options) {
-  const { apiKey, apiUrl, defaultNamespace, languages, outputPath } = options;
+  const { apiKey, apiUrl, defaultNamespace, languages, outputPath, split } =
+    options;
 
   // Fetch all languages and the zipped translations.
   await validateLanguages(languages, { apiKey, apiUrl });
@@ -152,9 +157,13 @@ export async function generateTolgeeTranslations(options: Options) {
   // Extract the zip so we can use the files.
   const files = await decompress(zip);
 
-  const messages = mergeTranslations(languages, files, defaultNamespace);
+  const source = mergeTranslations(languages, files, defaultNamespace);
 
-  writeMessagesFile(messages, outputPath);
+  if (split) {
+    writeMultipleLanguageFiles(source, outputPath);
+  } else {
+    writeMessagesFile(source, outputPath);
+  }
 }
 
 /**
@@ -190,9 +199,20 @@ export function mergeTranslations(
 /**
  * Writes the translations file.
  */
-function writeMessagesFile(messages: Locales, outputPath: string) {
+function writeMessagesFile(
+  messages: Locales | Locales[string],
+  outputPath: string
+) {
   const stringifiedMessages = JSON.stringify(messages);
   const codeStr = `// THIS FILE IS GENERATED, DO NOT EDIT!\nconst resources = ${stringifiedMessages};\ntype Resources = typeof resources;\nexport { resources, type Resources };`;
 
   writeFileSync(outputPath, codeStr);
+}
+
+function writeMultipleLanguageFiles(source: Locales, outputPath: string) {
+  const outputDir = path.dirname(outputPath);
+
+  for (const [language, messages] of Object.entries(source)) {
+    writeMessagesFile(messages, `${outputDir}/${language}.ts`);
+  }
 }
