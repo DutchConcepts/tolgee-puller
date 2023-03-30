@@ -9,10 +9,12 @@ const envalid = require('envalid');
 const dotenv = require('dotenv');
 const dotenvExpand = require('dotenv-expand');
 const pc = require('picocolors');
-const fs = require('fs');
 const decompress = require('decompress');
 const fetch = require('node-fetch');
 const tsIsPresent = require('ts-is-present');
+const prettier = require('prettier');
+const promises = require('fs/promises');
+const TypeScriptParser = require('prettier/parser-typescript');
 
 dotenvExpand.expand(dotenv.config());
 const env = envalid.cleanEnv(process.env, {
@@ -25,7 +27,8 @@ const env = envalid.cleanEnv(process.env, {
   TOLGEE_LANGUAGES: envalid.json({ default: [] }),
   TOLGEE_NAMESPACES: envalid.json({ default: [] }),
   TOLGEE_DEFAULT_NAMESPACE: envalid.str({ default: "" }),
-  TOLGEE_OUTPUT_PATH: envalid.str({ default: "" })
+  TOLGEE_OUTPUT_PATH: envalid.str({ default: "" }),
+  TOLGEE_PRETTIER: envalid.bool({ default: false })
 });
 
 function logSuccess(message, ...args) {
@@ -35,6 +38,25 @@ function logSuccess(message, ...args) {
 function logError(message, ...args) {
   console.error(pc.red(pc.bold(`[tolgee-puller] `)), message, pc.red("\u26A0"));
   args.forEach((arg) => console.error(arg));
+}
+
+function makePretty(code, options) {
+  return prettier.format(code, {
+    parser: "typescript",
+    plugins: [TypeScriptParser],
+    ...options
+  });
+}
+async function writeResourceFile(body, outputPath, prettify = false) {
+  let code = `// THIS FILE IS GENERATED, DO NOT EDIT!
+const resources = ${body};
+type Resources = typeof resources;
+export { resources, type Resources };`;
+  if (prettify) {
+    const options = await prettier.resolveConfig(outputPath);
+    code = makePretty(code, options);
+  }
+  promises.writeFile(outputPath, code);
 }
 
 function parseMultiValueFilter(filter, values) {
@@ -63,11 +85,11 @@ function parseQueryParams(languages, namespaces) {
 function isObjectWithProp(value, key) {
   return typeof value === "object" && value !== null && key in value;
 }
-async function tolgeeApi(path, options) {
-  const response = await fetch(`${options.apiUrl}/v2${path}`, {
+async function tolgeeApi(path, { apiUrl, apiKey }) {
+  const response = await fetch(`${apiUrl}/v2${path}`, {
     headers: {
       "Content-Type": "application/json",
-      "X-API-Key": options.apiKey
+      "X-API-Key": apiKey
     }
   });
   if (!response.ok) {
@@ -103,16 +125,8 @@ async function validateLanguages(languages, options) {
   }
   throw new Error(`Failed retrieving languages. ${JSON.stringify(data)}`);
 }
-async function generateTolgeeTranslations(options) {
-  const { apiKey, apiUrl, defaultNamespace, languages, outputPath } = options;
-  await validateLanguages(languages, { apiKey, apiUrl });
-  const zip = await fetchTranslationsZip(options);
-  const files = await decompress(zip);
-  const messages = mergeTranslations(languages, files, defaultNamespace);
-  writeMessagesFile(messages, outputPath);
-}
 function mergeTranslations(languages, files, defaultNamespace) {
-  const messages = languages.reduce((preVal, value) => {
+  const resources = languages.reduce((preVal, value) => {
     return { ...preVal, [value]: {} };
   }, {});
   const isValidDefaultNamespace = !!defaultNamespace && defaultNamespace.length > 0;
@@ -121,20 +135,20 @@ function mergeTranslations(languages, files, defaultNamespace) {
     const [language] = filename.split(".");
     const newMessages = JSON.parse(data.toString());
     if (isValidDefaultNamespace && defaultNamespace === namespace) {
-      messages[language] = { ...messages[language], ...newMessages };
+      resources[language] = { ...resources[language], ...newMessages };
     } else {
-      messages[language][namespace] = newMessages;
+      resources[language][namespace] = newMessages;
     }
   });
-  return messages;
+  return JSON.stringify(resources);
 }
-function writeMessagesFile(messages, outputPath) {
-  const stringifiedMessages = JSON.stringify(messages);
-  const codeStr = `// THIS FILE IS GENERATED, DO NOT EDIT!
-const resources = ${stringifiedMessages};
-type Resources = typeof resources;
-export { resources, type Resources };`;
-  fs.writeFileSync(outputPath, codeStr);
+async function generateTolgeeTranslations(options) {
+  const { apiKey, apiUrl, defaultNamespace, languages, prettier, outputPath } = options;
+  await validateLanguages(languages, { apiKey, apiUrl });
+  const zip = await fetchTranslationsZip(options);
+  const files = await decompress(zip);
+  const body = mergeTranslations(languages, files, defaultNamespace);
+  writeResourceFile(body, outputPath, prettier);
 }
 
 const DEFAULT_OUTPUT_PATH = "node_modules/tolgee-puller/messages.ts";
@@ -168,6 +182,11 @@ const command = {
     defaultNamespace: {
       default: null,
       description: "The default namespace of the project."
+    },
+    prettier: {
+      default: false,
+      boolean: true,
+      description: "Format with Prettier"
     }
   },
   handler: async (argv) => {
@@ -177,6 +196,7 @@ const command = {
       languages: argv.languages || env.TOLGEE_LANGUAGES || null,
       namespaces: argv.namespaces || env.TOLGEE_NAMESPACES || [],
       defaultNamespace: argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null,
+      prettier: argv.prettier || env.TOLGEE_PRETTIER,
       outputPath: argv.outputPath || env.TOLGEE_OUTPUT_PATH || DEFAULT_OUTPUT_PATH
     };
     const outputPath = path.resolve(process$1.cwd(), options.outputPath);
@@ -198,6 +218,7 @@ const command = {
         defaultNamespace: options.defaultNamespace,
         languages: options.languages,
         namespaces: options.namespaces,
+        prettier: options.prettier,
         outputPath
       });
       logSuccess("Pulled translation files from Tolgee!");
