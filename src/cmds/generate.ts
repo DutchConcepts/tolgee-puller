@@ -20,6 +20,7 @@ type Options = Arguments<{
   namespaces: string[] | null;
   defaultNamespace: string | null;
   outputPath: string | null;
+  prettier: boolean;
 }>;
 
 const command: CommandModule<unknown, Options> = {
@@ -53,6 +54,11 @@ const command: CommandModule<unknown, Options> = {
       default: null,
       description: 'The default namespace of the project.',
     },
+    prettier: {
+      default: false,
+      boolean: true,
+      description: 'Format with Prettier',
+    },
   },
   handler: async (argv) => {
     const options = {
@@ -62,6 +68,7 @@ const command: CommandModule<unknown, Options> = {
       namespaces: argv.namespaces || env.TOLGEE_NAMESPACES || [],
       defaultNamespace:
         argv.defaultNamespace || env.TOLGEE_DEFAULT_NAMESPACE || null,
+      prettier: argv.prettier || env.TOLGEE_PRETTIER,
       outputPath:
         argv.outputPath || env.TOLGEE_OUTPUT_PATH || DEFAULT_OUTPUT_PATH,
     };
@@ -92,6 +99,7 @@ const command: CommandModule<unknown, Options> = {
         defaultNamespace: options.defaultNamespace,
         languages: options.languages,
         namespaces: options.namespaces,
+        prettier: options.prettier,
         outputPath,
       });
 

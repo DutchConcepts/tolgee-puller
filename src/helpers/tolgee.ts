@@ -1,29 +1,25 @@
 // external
-import { writeFileSync } from 'fs';
 import decompress from 'decompress';
 import fetch from 'node-fetch';
 import { isPresent } from 'ts-is-present';
 
-interface Options {
+// helpers
+import { writeResourceFile } from './file';
+
+// types
+import { Resources } from '../types/Resources';
+
+type Options = {
   apiKey: string;
   apiUrl: string;
   languages: string[];
   namespaces: string[];
   defaultNamespace: string | null;
+  prettier: boolean;
   outputPath: string;
-}
+};
 
 type ApiOptions = Pick<Options, 'apiKey' | 'apiUrl'>;
-
-interface Message {
-  [key: string]: string | Message;
-}
-
-interface Locales {
-  [language: string]: {
-    [component: string]: Message;
-  };
-}
 
 /**
  * Creates a query string for multi-value filters.
@@ -69,11 +65,14 @@ function isObjectWithProp(
   return typeof value === 'object' && value !== null && key in value;
 }
 
-async function tolgeeApi(path: string, options: ApiOptions) {
-  const response = await fetch(`${options.apiUrl}/v2${path}`, {
+/**
+ * Fetch from the Tolgee API.
+ */
+async function tolgeeApi(path: string, { apiUrl, apiKey }: ApiOptions) {
+  const response = await fetch(`${apiUrl}/v2${path}`, {
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': options.apiKey,
+      'X-API-Key': apiKey,
     },
   });
 
@@ -103,7 +102,7 @@ async function fetchTranslationsZip(options: Options) {
 }
 
 /**
- * Get an array of languages.
+ * Throws an `Error` if we are tying to fetch the wrong languages.
  */
 async function validateLanguages(
   languages: string[],
@@ -139,33 +138,14 @@ async function validateLanguages(
 }
 
 /**
- * Generates a `messages.ts` file in the root of this repository.
- */
-export async function generateTolgeeTranslations(options: Options) {
-  const { apiKey, apiUrl, defaultNamespace, languages, outputPath } = options;
-
-  // Fetch all languages and the zipped translations.
-  await validateLanguages(languages, { apiKey, apiUrl });
-
-  const zip = await fetchTranslationsZip(options);
-
-  // Extract the zip so we can use the files.
-  const files = await decompress(zip);
-
-  const messages = mergeTranslations(languages, files, defaultNamespace);
-
-  writeMessagesFile(messages, outputPath);
-}
-
-/**
- * Returns an object with all translations merged.
+ * Merges all the translation files into a single string.
  */
 export function mergeTranslations(
   languages: string[],
   files: decompress.File[],
   defaultNamespace: string | null
 ) {
-  const messages: Locales = languages.reduce((preVal, value) => {
+  const resources: Resources = languages.reduce((preVal, value) => {
     return { ...preVal, [value]: {} };
   }, {});
 
@@ -178,21 +158,27 @@ export function mergeTranslations(
     const newMessages = JSON.parse(data.toString());
 
     if (isValidDefaultNamespace && defaultNamespace === namespace) {
-      messages[language] = { ...messages[language], ...newMessages };
+      resources[language] = { ...resources[language], ...newMessages };
     } else {
-      messages[language][namespace] = newMessages;
+      resources[language][namespace] = newMessages;
     }
   });
 
-  return messages;
+  return JSON.stringify(resources);
 }
 
 /**
- * Writes the translations file.
+ * Generates the translations file.
  */
-function writeMessagesFile(messages: Locales, outputPath: string) {
-  const stringifiedMessages = JSON.stringify(messages);
-  const codeStr = `// THIS FILE IS GENERATED, DO NOT EDIT!\nconst resources = ${stringifiedMessages};\ntype Resources = typeof resources;\nexport { resources, type Resources };`;
+export async function generateTolgeeTranslations(options: Options) {
+  const { apiKey, apiUrl, defaultNamespace, languages, prettier, outputPath } =
+    options;
 
-  writeFileSync(outputPath, codeStr);
+  await validateLanguages(languages, { apiKey, apiUrl });
+
+  const zip = await fetchTranslationsZip(options);
+  const files = await decompress(zip);
+  const body = mergeTranslations(languages, files, defaultNamespace);
+
+  writeResourceFile(body, outputPath, prettier);
 }
