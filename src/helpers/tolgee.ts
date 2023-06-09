@@ -1,13 +1,16 @@
 // external
 import decompress from 'decompress';
+import dot from 'dot-object';
 import fetch from 'node-fetch';
 import { isPresent } from 'ts-is-present';
+import { parse, TYPE } from '@formatjs/icu-messageformat-parser';
 
 // helpers
 import { writeResourceFile } from './file';
+import { logError, logInfo } from '../helpers/logger';
 
 // types
-import { Resources } from '../types/Resources';
+import { Outliers, Resources } from '../types/Resources';
 
 type Options = {
   apiKey: string;
@@ -164,7 +167,75 @@ export function mergeTranslations(
     }
   });
 
-  return JSON.stringify(resources);
+  return resources;
+}
+
+export function detectInconsistentVariableNames(
+  languages: string[],
+  resources: Resources
+) {
+  const flatResources = Object.fromEntries(
+    languages.map((language) => [language, dot.dot(resources[language])])
+  );
+
+  const outliers: Outliers = {};
+
+  for (const language of languages) {
+    for (const [key, value] of Object.entries(flatResources[language])) {
+      const variables = extractVariableNames(value as string);
+
+      for (const compareLanguage of languages) {
+        const compareValue = flatResources[compareLanguage][key];
+        if (!compareValue) {
+          // The string is probably untranslated in this `compareLanguage`.
+          continue;
+        }
+
+        const compareVariables = extractVariableNames(
+          flatResources[compareLanguage][key]
+        );
+
+        for (const variable of variables) {
+          if (!compareVariables.includes(variable)) {
+            // Our `language` has a variable that is not present in this `compareLanguage`.
+            if (!outliers[key]) {
+              outliers[key] = [];
+            }
+            if (!outliers[key].includes(variable)) {
+              outliers[key].push(variable);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const outliers_ = Object.keys(outliers);
+
+  if (outliers_.length) {
+    logInfo(
+      `Found ${outliers_.length} keys that have outlier variables in one or more languages:`,
+      outliers
+    );
+  }
+}
+
+function extractVariableNames(message: string) {
+  const names: string[] = [];
+  try {
+    for (const variable of parse(message)) {
+      if (variable.type !== TYPE.literal) {
+        if ('value' in variable) {
+          names.push(variable.value);
+        }
+      }
+    }
+  } catch (e) {
+    logError(`Caught an error while trying to parse an ICU message.`);
+    logError(`Message:`, message);
+    logError(`Error:`, e);
+  }
+  return names;
 }
 
 /**
@@ -178,7 +249,10 @@ export async function generateTolgeeTranslations(options: Options) {
 
   const zip = await fetchTranslationsZip(options);
   const files = await decompress(zip);
-  const body = mergeTranslations(languages, files, defaultNamespace);
+  const resources = mergeTranslations(languages, files, defaultNamespace);
+  detectInconsistentVariableNames(languages, resources);
+
+  const body = JSON.stringify(resources);
 
   writeResourceFile(body, outputPath, prettier);
 }

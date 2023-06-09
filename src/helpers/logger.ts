@@ -10,3 +10,8 @@ export function logError(message: string, ...args: unknown[]) {
   console.error(pc.red(pc.bold(`[tolgee-puller] `)), message, pc.red('⚠'));
   args.forEach((arg) => console.error(arg));
 }
+
+export function logInfo(message: string, ...args: unknown[]) {
+  console.error(pc.gray(pc.bold(`[tolgee-puller] `)), message, pc.gray('ⓘ'));
+  args.forEach((arg) => console.info(arg));
+}

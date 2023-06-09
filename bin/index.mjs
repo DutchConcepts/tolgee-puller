@@ -8,8 +8,10 @@ import dotenv from 'dotenv';
 import { expand } from 'dotenv-expand';
 import pc from 'picocolors';
 import decompress from 'decompress';
+import dot from 'dot-object';
 import fetch from 'node-fetch';
 import { isPresent } from 'ts-is-present';
+import { parse, TYPE } from '@formatjs/icu-messageformat-parser';
 import { resolveConfig, format } from 'prettier';
 import { writeFile } from 'fs/promises';
 import TypeScriptParser from 'prettier/parser-typescript';
@@ -36,6 +38,10 @@ function logSuccess(message, ...args) {
 function logError(message, ...args) {
   console.error(pc.red(pc.bold(`[tolgee-puller] `)), message, pc.red("\u26A0"));
   args.forEach((arg) => console.error(arg));
+}
+function logInfo(message, ...args) {
+  console.error(pc.gray(pc.bold(`[tolgee-puller] `)), message, pc.gray("\u24D8"));
+  args.forEach((arg) => console.info(arg));
 }
 
 function makePretty(code, options) {
@@ -138,14 +144,70 @@ function mergeTranslations(languages, files, defaultNamespace) {
       resources[language][namespace] = newMessages;
     }
   });
-  return JSON.stringify(resources);
+  return resources;
+}
+function detectInconsistentVariableNames(languages, resources) {
+  const flatResources = Object.fromEntries(
+    languages.map((language) => [language, dot.dot(resources[language])])
+  );
+  const outliers = {};
+  for (const language of languages) {
+    for (const [key, value] of Object.entries(flatResources[language])) {
+      const variables = extractVariableNames(value);
+      for (const compareLanguage of languages) {
+        const compareValue = flatResources[compareLanguage][key];
+        if (!compareValue) {
+          continue;
+        }
+        const compareVariables = extractVariableNames(
+          flatResources[compareLanguage][key]
+        );
+        for (const variable of variables) {
+          if (!compareVariables.includes(variable)) {
+            if (!outliers[key]) {
+              outliers[key] = [];
+            }
+            if (!outliers[key].includes(variable)) {
+              outliers[key].push(variable);
+            }
+          }
+        }
+      }
+    }
+  }
+  const outliers_ = Object.keys(outliers);
+  if (outliers_.length) {
+    logInfo(
+      `Found ${outliers_.length} keys that have outlier variables in one or more languages:`,
+      outliers
+    );
+  }
+}
+function extractVariableNames(message) {
+  const names = [];
+  try {
+    for (const variable of parse(message)) {
+      if (variable.type !== TYPE.literal) {
+        if ("value" in variable) {
+          names.push(variable.value);
+        }
+      }
+    }
+  } catch (e) {
+    logError(`Caught an error while trying to parse an ICU message.`);
+    logError(`Message:`, message);
+    logError(`Error:`, e);
+  }
+  return names;
 }
 async function generateTolgeeTranslations(options) {
   const { apiKey, apiUrl, defaultNamespace, languages, prettier, outputPath } = options;
   await validateLanguages(languages, { apiKey, apiUrl });
   const zip = await fetchTranslationsZip(options);
   const files = await decompress(zip);
-  const body = mergeTranslations(languages, files, defaultNamespace);
+  const resources = mergeTranslations(languages, files, defaultNamespace);
+  detectInconsistentVariableNames(languages, resources);
+  const body = JSON.stringify(resources);
   writeResourceFile(body, outputPath, prettier);
 }
 

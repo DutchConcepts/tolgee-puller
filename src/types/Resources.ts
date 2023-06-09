@@ -9,3 +9,7 @@ export type Resources = {
     };
   };
 };
+
+export type Outliers = {
+  [key: string]: string[];
+};

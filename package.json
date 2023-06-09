@@ -32,6 +32,7 @@
   "devDependencies": {
     "@rushstack/eslint-patch": "^1.2.0",
     "@types/decompress": "^4.2.4",
+    "@types/dot-object": "^2.1.2",
     "@types/prettier": "^2.7.2",
     "@types/yargs": "^17.0.22",
     "eslint": "^8.29.0",
@@ -41,7 +42,9 @@
     "unbuild": "^1.0.2"
   },
   "dependencies": {
+    "@formatjs/icu-messageformat-parser": "^2.5.0",
     "decompress": "^4.2.1",
+    "dot-object": "^2.1.4",
     "dotenv": "^16.0.3",
     "dotenv-expand": "^10.0.0",
     "envalid": "^7.3.1",
